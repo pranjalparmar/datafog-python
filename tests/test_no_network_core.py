@@ -43,6 +43,28 @@ assert "415-555-1212" not in redact_result.redacted_text
     )
 
 
+def test_redact_positional_strategy_remains_compatible() -> None:
+    import datafog
+    from datafog.engine import scan_and_redact
+
+    public_result = datafog.redact(
+        "Email jane@example.com",
+        None,
+        "regex",
+        None,
+        "mask",
+    )
+    engine_result = scan_and_redact(
+        "Email jane@example.com",
+        "regex",
+        None,
+        "mask",
+    )
+
+    assert public_result.redacted_text == engine_result.redacted_text
+    assert public_result.redacted_text != "Email jane@example.com"
+
+
 def test_core_defaults_do_not_initialize_optional_engines(monkeypatch) -> None:
     import datafog
     import datafog.engine as engine

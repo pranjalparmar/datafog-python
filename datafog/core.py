@@ -5,10 +5,11 @@ This module provides simple, lightweight functions for PII detection and anonymi
 without requiring heavy dependencies like spaCy or PyTorch.
 """
 
-from typing import Dict, List, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 from datafog.engine import scan, scan_and_redact
 from datafog.models.anonymizer import AnonymizerType
+from datafog.processing.text_processing.regex_annotator import RegexAnnotator
 
 # Engine types as constants
 REGEX_ENGINE = "regex"
@@ -16,12 +17,15 @@ SPACY_ENGINE = "spacy"
 AUTO_ENGINE = "auto"
 
 
-def detect_pii(text: str) -> Dict[str, List[str]]:
+def detect_pii(
+    text: str, locales: Optional[Iterable[str] | str] = None
+) -> Dict[str, List[str]]:
     """
     Simple PII detection using lightweight regex engine.
 
     Args:
         text: Text to scan for PII
+        locales: Optional list of locale codes that enable locale-specific labels
 
     Returns:
         Dictionary mapping entity types to lists of detected values
@@ -37,7 +41,7 @@ def detect_pii(text: str) -> Dict[str, List[str]]:
 
     try:
         # Use engine boundary for canonical scan behavior.
-        scan_result = scan(text=text, engine=REGEX_ENGINE)
+        scan_result = scan(text=text, engine=REGEX_ENGINE, locales=locales)
         pii_dict: Dict[str, List[str]] = {}
         for entity in scan_result.entities:
             if not entity.text.strip():
@@ -81,13 +85,18 @@ def detect_pii(text: str) -> Dict[str, List[str]]:
         ) from e
 
 
-def anonymize_text(text: str, method: Union[str, AnonymizerType] = "redact") -> str:
+def anonymize_text(
+    text: str,
+    method: Union[str, AnonymizerType] = "redact",
+    locales: Optional[Iterable[str] | str] = None,
+) -> str:
     """
     Simple text anonymization using lightweight regex engine.
 
     Args:
         text: Text to anonymize
         method: Anonymization method ('redact', 'replace', or 'hash')
+        locales: Optional list of locale codes that enable locale-specific labels
 
     Returns:
         Anonymized text string
@@ -119,6 +128,7 @@ def anonymize_text(text: str, method: Union[str, AnonymizerType] = "redact") -> 
         result = scan_and_redact(
             text=text,
             engine=REGEX_ENGINE,
+            locales=locales,
             strategy=strategy_map[method],
         )
 
@@ -155,7 +165,9 @@ def anonymize_text(text: str, method: Union[str, AnonymizerType] = "redact") -> 
 
 
 def scan_text(
-    text: str, return_entities: bool = False
+    text: str,
+    return_entities: bool = False,
+    locales: Optional[Iterable[str] | str] = None,
 ) -> Union[bool, Dict[str, List[str]]]:
     """
     Quick scan to check if text contains any PII.
@@ -163,6 +175,7 @@ def scan_text(
     Args:
         text: Text to scan
         return_entities: If True, return detected entities; if False, return boolean
+        locales: Optional list of locale codes that enable locale-specific labels
 
     Returns:
         Boolean indicating PII presence, or dictionary of detected entities
@@ -180,7 +193,7 @@ def scan_text(
 
     _start = _time.monotonic()
 
-    entities = detect_pii(text)
+    entities = detect_pii(text, locales=locales)
 
     result = entities if return_entities else len(entities) > 0
 
@@ -200,9 +213,11 @@ def scan_text(
     return result
 
 
-def get_supported_entities() -> List[str]:
+def get_supported_entities(locales: Optional[Iterable[str] | str] = None) -> List[str]:
     """
     Get list of PII entity types supported by the regex engine.
+
+    Locale-specific labels (e.g., DE_*) are only included when locales include "de".
 
     Returns:
         List of supported entity type names
@@ -210,9 +225,9 @@ def get_supported_entities() -> List[str]:
     Example:
         >>> entities = get_supported_entities()
         >>> print(entities)
-        ['EMAIL', 'PHONE', 'SSN', 'CREDIT_CARD', 'IP_ADDRESS', 'DOB', 'ZIP']
+        ['EMAIL', 'PHONE', 'SSN', 'CREDIT_CARD', 'IP_ADDRESS', 'DATE', 'ZIP_CODE']
     """
-    result = [
+    base = [
         "EMAIL",
         "PHONE",
         "SSN",
@@ -221,6 +236,14 @@ def get_supported_entities() -> List[str]:
         "DATE",
         "ZIP_CODE",
     ]
+
+    normalized_locales = RegexAnnotator._normalize_locales(locales)
+    locale_labels = [
+        label
+        for locale in normalized_locales
+        for label in RegexAnnotator.LOCALE_LABELS.get(locale, [])
+    ]
+    result = base + locale_labels if locale_labels else base
 
     try:
         from datafog.telemetry import track_function_call

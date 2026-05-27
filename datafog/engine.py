@@ -6,7 +6,7 @@ import hashlib
 import warnings
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Optional
+from typing import Iterable, Optional
 
 from .exceptions import EngineNotAvailable
 from .processing.text_processing.regex_annotator import RegexAnnotator
@@ -31,6 +31,13 @@ ALL_ENTITY_TYPES = {
     "SSN",
     "CREDIT_CARD",
     "IP_ADDRESS",
+    "DE_VAT_ID",
+    "DE_IBAN",
+    "DE_TAX_ID",
+    "DE_SOCIAL_SECURITY_NUMBER",
+    "DE_POSTAL_CODE",
+    "DE_PASSPORT_NUMBER",
+    "DE_RESIDENCE_PERMIT_NUMBER",
     "DATE",
     "ZIP_CODE",
     "PERSON",
@@ -131,8 +138,21 @@ def _entities_from_dict(
     return entities
 
 
-def _regex_entities(text: str) -> list[Entity]:
-    annotator = RegexAnnotator()
+def _normalize_regex_locales(locales: Optional[Iterable[str] | str]) -> tuple[str, ...]:
+    normalized = RegexAnnotator._normalize_locales(locales)
+    supported_locales = set(RegexAnnotator.LOCALE_LABELS)
+    return tuple(sorted(normalized & supported_locales))
+
+
+@lru_cache(maxsize=32)
+def _get_regex_annotator(locales_key: tuple[str, ...]) -> RegexAnnotator:
+    return RegexAnnotator(locales=locales_key)
+
+
+def _regex_entities(
+    text: str, locales: Optional[Iterable[str] | str] = None
+) -> list[Entity]:
+    annotator = _get_regex_annotator(_normalize_regex_locales(locales))
     _, structured = annotator.annotate_with_spans(text)
     entities: list[Entity] = []
     for span in structured.spans:
@@ -235,6 +255,7 @@ def scan(
     text: str,
     engine: str = "smart",
     entity_types: Optional[list[str]] = None,
+    locales: Optional[Iterable[str] | str] = None,
 ) -> ScanResult:
     """Scan text for PII entities."""
     if not isinstance(text, str):
@@ -243,7 +264,7 @@ def scan(
     if engine not in {"regex", "spacy", "gliner", "smart"}:
         raise ValueError("engine must be one of: regex, spacy, gliner, smart")
 
-    regex_entities = _regex_entities(text)
+    regex_entities = _regex_entities(text, locales=locales)
 
     if engine == "regex":
         filtered = _filter_entity_types(regex_entities, entity_types)
@@ -378,7 +399,10 @@ def scan_and_redact(
     engine: str = "smart",
     entity_types: Optional[list[str]] = None,
     strategy: str = "token",
+    locales: Optional[Iterable[str] | str] = None,
 ) -> RedactResult:
     """Convenience wrapper: scan then redact."""
-    scan_result = scan(text=text, engine=engine, entity_types=entity_types)
+    scan_result = scan(
+        text=text, engine=engine, entity_types=entity_types, locales=locales
+    )
     return redact(text=text, entities=scan_result.entities, strategy=strategy)

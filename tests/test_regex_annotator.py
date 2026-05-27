@@ -40,9 +40,23 @@ def test_regex_annotator_initialization():
     """Test that the RegexAnnotator can be initialized."""
     annotator = RegexAnnotator()
     assert annotator is not None
-    assert (
-        len(annotator.LABELS) == 7
-    )  # EMAIL, PHONE, SSN, CREDIT_CARD, IP_ADDRESS, DOB, ZIP
+    required_labels = {
+        "EMAIL",
+        "PHONE",
+        "SSN",
+        "CREDIT_CARD",
+        "IP_ADDRESS",
+        "DOB",
+        "ZIP",
+        "DE_VAT_ID",
+        "DE_IBAN",
+        "DE_TAX_ID",
+        "DE_SOCIAL_SECURITY_NUMBER",
+        "DE_POSTAL_CODE",
+        "DE_PASSPORT_NUMBER",
+        "DE_RESIDENCE_PERMIT_NUMBER",
+    }
+    assert required_labels.issubset(set(annotator.LABELS))
 
 
 def test_regex_annotator_create_method():
@@ -50,6 +64,20 @@ def test_regex_annotator_create_method():
     annotator = RegexAnnotator.create()
     assert annotator is not None
     assert isinstance(annotator, RegexAnnotator)
+
+
+def test_de_labels_inactive_without_locale():
+    """German DE_ labels should be inactive unless locales include 'de'."""
+    annotator = RegexAnnotator()
+    result = annotator.annotate("Passnummer C12345678 wurde geprueft.")
+    assert not result["DE_PASSPORT_NUMBER"]
+
+
+def test_de_labels_active_with_locale():
+    """German DE_ labels should activate when locales include 'de'."""
+    annotator = RegexAnnotator(locales=["de"])
+    result = annotator.annotate("Passnummer C12345678 wurde geprueft.")
+    assert "C12345678" in result["DE_PASSPORT_NUMBER"]
 
 
 def test_empty_text_annotation():
